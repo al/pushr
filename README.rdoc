@@ -65,7 +65,8 @@ Your application is updated with Capistrano. Done.
 
 If you're satisfied with what you see, you should run and control Pushr on the server/port of your choice using <tt>rake start:production[server,port]</tt>/<tt>rake stop:production[server,port]</tt>. For example
 
-  <tt>rake start:production[mongrel,4005]</tt>/<tt>rake stop:production[mongrel,4005]</tt>
+  $ rake start:production[mongrel,4005]
+  $ rake stop:production[mongrel,4005]
 
 By default <tt>rake start</tt>/<tt>rake stop</tt> will start/stop Pushr on Thin running on port 4000. Run <tt>rake -T</tt> for further information about available tasks.
 
