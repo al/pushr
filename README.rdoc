@@ -12,9 +12,8 @@ Currently runs deployment for about 5 Rails apps.
 Pushr assumes this:
 
 * You deploy a Rails application with Capistrano in standard settings
-* You have a "deploy" branch in your repo, which you deploy on production (and possibly deploy "master" on staging)
 * You have installed Capistrano et al. on the server you are deploying
-* You have a <tt>deploy.rb</tt> in your repository (and use SSH keys! you should!) or symlink <tt>deploy.rb</tt>
+* You have generated SSH keys for the server you are deploying on
 * You are willing and able to run a Ruby application open to teh internet on the same machine as your Rails application
 * You are not anxiously awaiting how the <tt>cap deploy</tt> task ends. You just check the results from time to time.
 * You have tests for your application and you run them in Capistrano <tt>before</tt> hook (so you don't end up deploying breakz)
@@ -39,7 +38,9 @@ You can easily add more notifiers: they are modeled after _Ingerity_ notifiers (
 
 Install or update following Rubygems <b>on the local machine or server where you want to run it</b>:
 
-    $ sudo gem install sinatra rack haml capistrano capistrano-ext thin
+    $ sudo gem install sinatra rack haml capistrano capistrano-ext rackup
+
+You will also need one of Thin, Mongrel or Webrick installed.
 
 Rename and edit the configuration file:
 
@@ -49,20 +50,24 @@ Rename and edit the configuration file:
 Run the app in development mode:
 
     rake
-    
+
 Set up *Github Post-Receive URL* (http://github.com/guides/post-receive-hooks) in your repo's administration to:
 
     http://{USERNAME SET IN CONFIG}:{PASSWORD SET IN CONFIG}@{YOUR SERVER}:4000
-    
+
 Load the URL in the browser. Fill the ugly HTTP-Auth box with the credentials from <tt>config.yml</tt>.
 You should see some info about deployed revision.
-    
+
 Click "Test Hook" at Github or do a <tt>git push</tt> to the git repo. You should see something POSTed in your terminal. 
 Your application is updated with Capistrano. Done.
 
 (Of course, you can use Git's post-receive hook in any repo, not just on Github. You would be <tt>curl</tt>-ing that URL or something like that then.)
 
-If you're satisfied with what you see, you should run and control Pushr backed-up with Thin by <tt>rake start</tt>/<tt>rake stop</tt>.
+If you're satisfied with what you see, you should run and control Pushr on the server/port of your choice using <tt>rake start:production[server,port]</tt>/<tt>rake stop:production[server,port]</tt>. For example
+
+  <tt>rake start:production[mongrel,4005]</tt>/<tt>rake stop:production[mongrel,4005]</tt>
+
+By default <tt>rake start</tt>/<tt>rake stop</tt> will start/stop Pushr on Thin running on port 4000. Run <tt>rake -T</tt> for further information about available tasks.
 
 Follow Twitter username you set in <tt>config.yml</tt> on Twitter for notifications. Run <tt>tail -f deploy.log</tt> to see what's really going on.
 
@@ -85,4 +90,3 @@ Get more information in these articles:
 * Disable deploy with `[nodeploy]` declaration in commit message
 
 * [!] Visualize deploy.log on webpage in a sparkline graph (succeeded/failed deploys, show relevant portion of deploy.log for each deploy, etc)
-

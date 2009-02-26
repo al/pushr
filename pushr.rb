@@ -20,7 +20,7 @@ module Pushr
   # == Shared logger
   module Logger
     unless defined? LOGGER
-      LOGGER       = ::Logger.new(File.join(File.dirname(__FILE__), 'deploy.log'), 'weekly')
+      LOGGER       = ::Logger.new(File.join(File.dirname(__FILE__), 'log/deploy.log'), 'weekly')
       LOGGER.level = ::Logger::INFO
     end
     def log; LOGGER; end

@@ -1,0 +1,15 @@
+== Edge
+
+=== New features
+* Use of rackup and ability to choose between Thin, Mongrel and Webrick servers aswell as port (Alan Larkin)
+* Use of Highline in app:add_public_key_to_localhost task (Alan Larkin)
+* Addition of tmp:pids:clear and log:clear tasks (Alan Larkin)
+
+=== Bugfixes
+
+=== Removed features
+* Term 'production' replaced with term 'deployment' (Alan Larkin)
+
+== 0.1
+
+Initial release (Karel Minarik)
