@@ -1,27 +1,30 @@
 # * Set name of your application
-application: Awesome
+application: Awesome App
 
 # * Username/password for HTTP Auth
-username: ~
-password: ~
+username: jim
+password: xxx
 
-# * Full path to your Rails application, eg. "/var/www/my_rails_app"
-path:  ~
+# * Full path to your Rails application
+path: /var/www/awesome_app
 
-# * Capistrano command (defaults to `cap deploy:migrations` if not set)
-cap_command: ~
+# * Capistrano command (defaults to "deploy" if not set)
+cap_command: deploy:migration
 
-# * Setup notifications (http://github.com/karmi/pushr_notifiers)
-# notifiers_path: "../somewhere/else" # Set this if your notifiers are not in ../pushr_notifiers
+# * Setup notifications (look in notifiers directory)
 notifiers:
-  # You'll probably want to protect the updates for this Twitter account :)
-  - twitter:
-     username: ~
-     password: ~
-  # For IRC see http://github.com/karmi/pushr_notifiers/blob/master/irc.rb
-  # - irc:
-  #      uri: 'irc://irc.freenode.net:6667/test'
-  # For XMPP see http://github.com/karmi/pushr_notifiers/blob/master/jabber.rb
-  # - jabber:
-  #      username: ~
-  #      password: ~
+  - twitter_notifier:
+      login: jim
+      password: xxx
+      success_template: 'Awesome App has been updated! {{ repository.revision }}: {{ repository.message }}'
+  - xmpp_notifier:
+      login: jim@mail.com
+      password: xxx
+      recipients:
+        - bill@mail.com
+        - sarah@mail.com
+      success_template: 'A new revision ({{ repository.revision }}) has been pushed: {{ repository.message }}'
+      failure_template: 'Deployment of ({{ repository.revision }}) failed.'
+  - irc_notifier:
+      uri: 'irc://irc.freenode.net:6667/test'
+      success_template: 'A new revision ({{ repository.revision }}) has been pushed: {{ repository.message }}'

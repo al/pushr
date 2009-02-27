@@ -1,6 +1,12 @@
 == Edge
 
 === New features
+* Merged XMPP and IRC notifiers from github.com/karmi/pushr_notifiers into project (Alan Larkin)
+* Modified notifications to use observer pattern (Alan Larkin)
+* Modifed notifiers to accept Liquid templates (Alan Larkin)
+* Rewrote Twitter notifier to use twitter4r gem (Alan Larkin)
+* Modified XMPP notifier to accepts a list of recipients (Alan Larkin)
+* Miscellaneous refactoring (Alan Larkin)
 * Use of rackup and ability to choose between Thin, Mongrel and Webrick servers aswell as port (Alan Larkin)
 * Use of Highline in app:add_public_key_to_localhost task (Alan Larkin)
 * Addition of tmp:pids:clear and log:clear tasks (Alan Larkin)

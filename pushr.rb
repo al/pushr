@@ -2,90 +2,59 @@ require 'rubygems'
 require 'sinatra'
 require 'yaml'
 require 'logger'
+require 'observer'
 
-# = Pushr
-# Deploy Rails applications by Github Post-Receive URLs launching Capistrano's commands
-
-CONFIG = YAML.load_file( File.join(File.dirname(__FILE__), 'config.yml') ) unless defined? CONFIG
+CONFIG = YAML.load_file(File.join(File.dirname(__FILE__), 'config.yml')) unless defined? CONFIG
 
 class String
-  # http://github.com/rails/rails/blob/master/activesupport/lib/active_support/core_ext/string/inflections.rb#L44-49
   def camelize
     self.gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
+  end
+
+  def blank?
+    self.nil? || self =~ /^\s*$/
   end
 end
 
 module Pushr
-
-  # == Shared logger
   module Logger
     unless defined? LOGGER
-      LOGGER       = ::Logger.new(File.join(File.dirname(__FILE__), 'log/deploy.log'), 'weekly')
+      LOGGER = ::Logger.new(File.join(File.dirname(__FILE__), 'log/deploy.log'), 'weekly')
       LOGGER.level = ::Logger::INFO
     end
+
     def log; LOGGER; end
   end
 
-  # == Wrapping notifications
-  # Inspired by http://github.com/foca/integrity
-  class Notifier
-
-    # Inherit from this class in your notifiers
-    # See eg. http://github.com/karmi/pushr_notifiers/blob/master/irc.rb
+  module Notifier
     class Base
-
       include Pushr::Logger
 
-      attr_reader :config
-
-      def initialize(config={})
-        @config = config
-        log.fatal("#{self.class.name}") { "Notifier not configured!" } unless configured?
+      def update(pushr_application)
+        raise NoMethodError, 'You need to implement #update method in your notifier'
       end
 
-      # Implement this method for your particular notification method
-      def deliver!
-        raise NoMethodError, "You need to implement 'deliver!' method in your notifier"
-      end
+      protected
 
-      private
+      def validate_args!(args, required, optional)
+        missing_requirments = (required - args.keys)
+        unless missing_requirments.empty?
+          error_message = "Required argument(s) missing: #{missing_requirments.join(', ')}"
+          log.fatal(self.class.name) { error_message }
+          raise ArgumentError, error_message
+        end
 
-      # Over-ride this method to send diferent message
-      def message(notification)
-        if notification.success
-          "Deployed #{notification.application} with revision #{notification.repository.info.revision} — #{notification.repository.info.message.slice(0, 100)}"
-        else
-          "FAIL! Deploying #{notification.application} failed. Check deploy.log for details."
+        unrecognised_arguments = (args.keys - (required + optional))
+        unless unrecognised_arguments.empty?
+          error_message = "Unrecognised argument(s): #{unrecognised_arguments.join(', ')}"
+          log.fatal(self.class.name) { error_message }
+          raise ArgumentError, error_message
         end
       end
-
-      # Implement this method to check for notifier configuration
-      def configured?
-        raise NoMethodError, "You need to implement 'configured?' method in your notifier"
-      end
-
     end
+  end
 
-    # Twitter notifications (default)
-    class Twitter < Base
-
-      def deliver!(notification)
-        return unless configured?
-        %x[curl --silent --data status='#{message(notification)}' http://#{config['username']}:#{config['password']}@twitter.com/statuses/update.json]
-      end
-
-      private
-
-      def configured?
-        !config['username'].nil? && !config['password'].nil?
-      end
-    end
-
-  end # end Notifier
-
-  # == Wrapping Git stuff
   class Repository
-
     include Logger
 
     Struct.new('Info', :revision, :message, :author, :when, :datetime) unless defined? Struct::Info
@@ -95,8 +64,7 @@ module Pushr
     end
 
     def info
-      info = `cd #{@path}/current; git log --pretty=format:'%h --|-- %s --|-- %an --|-- %ar --|-- %ci' -n 1`
-      @info ||= Struct::Info.new( *info.split(/\s{1}--\|--\s{1}/) )
+      @info ||= Struct::Info.new(*`cd #{@path}/current; git log --pretty=format:'%h --|-- %s --|-- %an --|-- %ar --|-- %ci' -n 1`.split(/\s{1}--\|--\s{1}/))
     end
 
     def reload!
@@ -105,77 +73,76 @@ module Pushr
     end
 
     def uptodate?
-      log.info('Pushr') { "Fetching new revisions from remote..." }
+      log.info('Pushr') { 'Fetching new revisions from remote...' }
       info = `cd #{@path}/shared/cached-copy; git fetch -q origin 2>&1`
       log.fatal('git fetch -q origin') { "Error while checking if app up-to-date: #{info}" } and return false unless $?.success?
-      return info.strip == '' # Blank output => No updates from git remote
+      return info.blank? # Blank output => No updates from git remote
     end
 
-  end # end Repository
+    def to_liquid
+      { 'revision' => @info.revision,
+        'message' => @info.message,
+        'author' => @info.author,
+        'when' => @info.when,
+        'datetime' => @info.datetime
+      }
+    end
+  end
 
-  # == Wrapping application logic
   class Application
-
+    include Observable
     include Logger
+
+    DEFAULT_TASK = 'deploy' unless defined? DEFAULT_TASK
 
     attr_reader :path, :application, :repository, :success, :cap_output
 
     def initialize(path)
       log.fatal('Pushr.new') { "Path not valid: #{path}" } and raise ArgumentError, "File not found: #{path}" unless File.exists?(path)
       @path = path
-      @application = ::CONFIG['application'] || "You really should set this to something"
-      @repository  = Repository.new(path)
-      load_notifiers
+      @application = ::CONFIG['application'] || 'You really should set this to something'
+      @repository = Repository.new(path)
+      attach_observers
     end
 
-    def deploy!(force=false)
-      if repository.uptodate? # Do not deploy if up-to-date (eg. push was to other branch) ...
-        log.info('Pushr') { "No updates for application found" } and return {:@success => false, :output => 'Application is uptodate'}
-      end unless force == 'true' # ... unless forced from web GUI
-      cap_command = CONFIG['cap_command'] || 'deploy:migrations'
+    def deploy!(force = false)
+      log.info('Pushr') { "No updates for application found" } and return {:@success => false, :output => 'Application is uptodate'} if repository.uptodate? && !force
       log.info(application) { "Deployment #{"(force) " if force == 'true' }starting..." }
-      @cap_output  = %x[cd #{path}/shared/cached-copy; cap #{cap_command} 2>&1]
-      @success     = $?.success?
-      @repository.reload!  # Update repository info (after deploy)
-      log_deploy_result
-      send_notifications
+      @cap_output = %x[cd #{path}/shared/cached-copy; cap #{CONFIG['cap_command'] || DEFAULT_TASK} 2>&1]
+      @success = $?.success?
+      @repository.reload!
+      log_deploy_result(@success, @cap_output)
+      changed
+      notify_observers(@success, @cap_output, repository)
     end
 
     private
 
-    def log_deploy_result
-      if @success
-        log.info('[SUCCESS]')   { "Successfuly deployed application with revision #{repository.info.revision} (#{repository.info.message}). Capistrano output:" }
-        log.info('Capistrano')  { @cap_output.to_s }
+    def log_deploy_result(success, output)
+      if success
+        log.info('[SUCCESS]') { "Successfuly deployed application with revision #{repository.info.revision} (#{repository.info.message}). Capistrano output:" }
+        log.info('Capistrano') { output.to_s }
       else
-        log.warn('[FAILURE]')   { "Error when deploying application! Check Capistrano output below:" }
-        log.warn('Capistrano')  { @cap_output.to_s }
+        log.warn('[FAILURE]') { 'Error when deploying application! Check Capistrano output below:' }
+        log.warn('Capistrano') { output.to_s }
       end
     end
 
-    def load_notifiers
-      @notifiers_path = CONFIG['notifiers_path'] || '../pushr_notifiers'
-      @notifiers = []
+    def attach_observers
       CONFIG['notifiers'].each do |notifier|
         notifier_name, notifier_config = notifier.to_a.flatten
         unless Pushr::Notifier::const_defined?(notifier_name.to_s.camelize)
           begin
-            require File.join( File.dirname(__FILE__), @notifiers_path, notifier_name  ) 
+            require File.join(File.dirname(__FILE__), 'notifiers', notifier_name)
           rescue Exception => e
-            raise LoadError, "Notifier #{notifier_name} not found! (#{e.message})"
+            raise LoadError, "Notifier #{notifier_name} not found or could not be loaded: (#{e.message})"
           end
         end
-        @notifiers << Pushr::Notifier::const_get( notifier_name.to_s.camelize ).new(notifier_config)
+        add_observer(Pushr::Notifier::const_get(notifier_name.to_s.camelize).new(notifier_config))
       end
     end
-
-    def send_notifications
-      @notifiers.each { |n| n.deliver!(self) }
-    end
-
-  end # end Application
-
-end # end Pushr
+  end
+end
 
 # -------  Sinatra gets on stage here  --------------------------------------------------
 
@@ -189,7 +156,6 @@ end
 
 # -- Helpers
 helpers do
-
   def authorized?
     @auth ||=  Rack::Auth::Basic::Request.new(request.env)
     @auth.provided? && @auth.basic? && @auth.credentials && @auth.credentials.first == CONFIG['username'] && @auth.credentials.last == CONFIG['password']
@@ -198,7 +164,6 @@ helpers do
   def configured?
     CONFIG['username'] && !CONFIG['username'].nil? && CONFIG['password'] && !CONFIG['password'].nil?
   end
-
 end
 
 # == Get info
@@ -255,7 +220,6 @@ __END__
     %form{ :action => "/", :method => 'post', :onsubmit => "this.submit.disabled='true'" }
       %input{ 'type' => 'hidden', 'name' => 'force', 'value' => 'true' }
       %input{ 'type' => 'submit', 'value' => 'Deploy!', 'name' => 'submit', :id => 'submit' }
-
 
 @@ deployed
 - if @pushr.success
